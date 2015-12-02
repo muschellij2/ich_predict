@@ -15,15 +15,25 @@ if (!have_matlab()) {
   options(matlab.path = '/Applications/MATLAB_R2014b.app/bin')
 }
 
-remake_img = function(vec, img, mask = NULL) {
-  if (is.null(mask)) {
-    mask = array(1, dim = dim(img))
-  }
-  img2 = niftiarr(img, 0)
-  img2[mask == 1] = vec
-  img2 = datatyper(img2)
-  img2 = cal_img(img2)
-  return(img2)
+# filename =  "~/Desktop/6003-157/_AXIAL_HEAD_STD_20140115181000_2_Eq_1.nii.gz"
+verbose = TRUE
+
+# Simple Function that will get the messages out
+add_expr = function(expr){
+  withCallingHandlers(
+    expr,
+    message = function(m) {
+      shinyjs::text(id = "nText", 
+                    text = paste0(m$message, "<br/>"), add = TRUE)
+    },
+    warning = function(w) {
+      shinyjs::text(id = "nText", 
+                    text = paste0(w$message, "<br/>"), add = TRUE)
+    },
+    error = function(e) {
+      shinyjs::text(id = "nText", 
+                    text = paste0(e$message, "<br/>"), add = TRUE)
+    })
 }
 
 shinyServer(function(input, output, session) {
@@ -37,7 +47,6 @@ shinyServer(function(input, output, session) {
   read_img = reactive({
     inFile <- input$img_fname
     
-    # print(inFile)
     if (is.null(inFile)) {
       return(NULL)
     } else {
@@ -54,31 +63,42 @@ shinyServer(function(input, output, session) {
         }
         file.rename(dpath, filename)
       }
-      img = readnii(filename)
+      add_expr({
+        if (verbose) {
+          message("<h3># Reading in Data</h3>")
+        }       
+        img = readnii(filename)
+      })
       return(img)
     }
   })
-#   
-#   proc_img = reactive({
-#     
-#     img = read_img()
-#     if (!is.null(img)) {
-#       preprocess = ich_preprocess(img = img, 
-#                                   mask = NULL,
-#                                   verbose = TRUE)
-#       return(preprocess)
-#     } else {
-#       return(NULL)
-#     }
-#     
-#   })
+  #   
+  #   proc_img = reactive({
+  #     
+  #     img = read_img()
+  #     if (!is.null(img)) {
+  #       preprocess = ich_preprocess(img = img, 
+  #                                   mask = NULL,
+  #                                   verbose = TRUE)
+  #       return(preprocess)
+  #     } else {
+  #       return(NULL)
+  #     }
+  #     
+  #   })
   
   output$origPlot <- renderPlot({
     shinyjs::disable("download")
     
     img = read_img()
     if (!is.null(img)) {
+      add_expr({
+        if (verbose) {
+          message("<h3># Plotting Original in Data</h3>")
+        }     
+      })        
       ortho2(img, window = c(0, 100), text = "Original\nImage")
+      
       updateButton(session, "ss", 
                    disabled = FALSE, 
                    icon = icon("chevron-right"))
@@ -91,22 +111,29 @@ shinyServer(function(input, output, session) {
   # Skull Stripping
   #########################################  
   observe({
-    print(input$ss)
+    
     if (input$ss > 0) {
       
       updateButton(session, "ss", disabled = TRUE, 
                    icon = icon("spinner fa-spin"))      
       
       img = read_img()
-      
-      ss = CT_Skull_Strip_robust(img, retimg = TRUE)
+      add_expr({
+        if (verbose) {
+          message("<h3># Skull-Stripping Images</h3>")
+        } 
+        ss = CT_Skull_Strip_robust(img, retimg = TRUE)
+        # ss = CT_Skull_Strip(img, retimg = TRUE)
+      })
       mask = ss > 0
       img = check_nifti(img)
       ss = mask_img(img, mask)
       ss = window_img(ss, window = c(0, 100), replace = "zero")
       values$ss = ss
       icon = icon("check")
-      updateButton(session, "ss", disabled = disabled, icon = icon("check"))          
+      updateButton(session, "ss", 
+                   disabled = TRUE, 
+                   icon = icon("check"))          
       updateButton(session, "reg", disabled = FALSE, 
                    icon = icon("chevron-right"))      
     }
@@ -119,8 +146,14 @@ shinyServer(function(input, output, session) {
     # print(input$ss)
     ss = values$ss
     if (!is.null(ss)) {
+      add_expr({
+        if (verbose) {
+          message("<h3># Plotting Skull-Stripped Data<h3>")
+        }    
+      })        
       ortho2(ss, window = c(0, 100), xyz = xyz(ss > 0), 
              text = "Skull-Stripped\nImage")
+      
     } else {
       return()
     }
@@ -131,11 +164,11 @@ shinyServer(function(input, output, session) {
   # Registration
   #########################################    
   observe({
-    print(input$reg)
+    # print(input$reg)
     if (input$reg > 0) {    
       updateButton(session, "reg", disabled = TRUE, 
                    icon = icon("spinner fa-spin"))      
-
+      
       ss = values$ss
       mask = ss > 0
       outprefix = tempfile()
@@ -145,35 +178,40 @@ shinyServer(function(input, output, session) {
         package = "cttools")
       template = readnii(template.file)
       interpolator = "Linear"
-      verbose = TRUE
+      add_expr({
+        if (verbose) {
+          message("<h3># Registering Images<h3>")
+        }            
+        preprocess = registration(
+          filename = ss, 
+          skull_strip = FALSE,
+          correct = FALSE, 
+          outfile = NULL, 
+          retimg = TRUE, 
+          typeofTransform = typeofTransform,
+          template.file = template.file, 
+          interpolator = interpolator,
+          remove.warp = FALSE,
+          outprefix = outprefix,
+          verbose = verbose)
+        
+        omask = ants_apply_transforms(
+          fixed = template.file,
+          moving = mask, 
+          typeofTransform = typeofTransform,
+          interpolator = interpolator, 
+          transformlist = preprocess$fwdtransforms)
+      })
+      preprocess$mask = mask
+      preprocess$ss_image = ss
+      preprocess$transformed_image = preprocess$outfile
+      preprocess$transformed_mask = omask
+      preprocess$outfile = NULL
+      preprocess$fixed = template
       
-      res = registration(
-        filename = ss, 
-        skull_strip = FALSE,
-        correct = FALSE, 
-        outfile = NULL, 
-        retimg = TRUE, 
-        typeofTransform = typeofTransform,
-        template.file = template.file, 
-        interpolator = interpolator,
-        remove.warp = FALSE,
-        outprefix = outprefix,
-        verbose = verbose)
-      
-      omask = ants_apply_transforms(fixed = template.file,
-                                    moving = mask, 
-                                    typeofTransform = typeofTransform,
-                                    interpolator = interpolator, 
-                                    transformlist = res$fwdtransforms)
-      res$mask = mask
-      res$ss_image = ss
-      res$transformed_image = res$outfile
-      res$transformed_mask = omask
-      res$outfile = NULL
-      res$fixed = template
-      
-      values$preprocess = res
-      updateButton(session, "reg", disabled = TRUE, icon = icon("check"))
+      values$preprocess = preprocess
+      updateButton(session, "reg", disabled = TRUE, 
+                   icon = icon("check"))
       updateButton(session, "make_pred", disabled = FALSE, 
                    icon = icon("chevron-right"))      
       
@@ -188,10 +226,15 @@ shinyServer(function(input, output, session) {
     # print(input$ss)
     preprocess = values$preprocess
     if (!is.null(preprocess)) {
-      double_ortho(preprocess$transformed_image, 
-             preprocess$fixed, 
-             window = c(0, 100), 
-             text = "Registered\nImage\nand\nTemplate")
+      add_expr({
+        if (verbose) {
+          message("<h3># Plotting Registered Data<h3>")
+        }      
+        double_ortho(preprocess$transformed_image, 
+                     preprocess$fixed, 
+                     window = c(0, 100), 
+                     text = "Registered\nImage\nand\nTemplate")
+      })
     } else {
       return()
     }
@@ -210,20 +253,27 @@ shinyServer(function(input, output, session) {
       
       timg = preprocess$transformed_image
       tmask = preprocess$transformed_mask > 0.5
-      verbose = TRUE
-      img.pred = make_predictors(timg, 
-                                 mask = tmask,
-                                 roi = NULL, 
-                                 save_imgs = FALSE,
-                                 verbose = verbose)
+      add_expr({
+        if (verbose) {
+          message("<h3># Making Predictors<h3>")
+        }         
+        img.pred = make_predictors(timg, 
+                                   mask = tmask,
+                                   roi = NULL, 
+                                   save_imgs = FALSE,
+                                   verbose = verbose)
+      })
       df = img.pred$df
       nim = img.pred$nim
       rm(list = "img.pred")
       gc()
       df$multiplier = ich_candidate_voxels(df)
+
+      
       values$df = df
       values$nim = nim
-      updateButton(session, "make_pred", disabled = TRUE, icon = icon("check"))
+      updateButton(session, "make_pred", 
+                   disabled = TRUE, icon = icon("check"))
       updateButton(session, "predict", disabled = FALSE, 
                    icon = icon("chevron-right"))      
     }
@@ -233,7 +283,7 @@ shinyServer(function(input, output, session) {
   # Making Predictors Plot
   #########################################          
   output$candPlot <- renderPlot({
-
+    
     df = values$df
     nim = values$nim    
     preprocess = values$preprocess
@@ -242,7 +292,11 @@ shinyServer(function(input, output, session) {
       cand = remake_img(df$multiplier, nim)
       xyz = xyz(cand)
       timg = preprocess$transformed_image
-      
+      add_expr({
+        if (verbose) {
+          message("<h3># Plotting Candidate Data<h3>")
+        }     
+      })
       ortho2(timg, cand, 
              window = c(0, 100), 
              text = "Registered\nImage\nand\nCandidate Mask")
@@ -265,19 +319,23 @@ shinyServer(function(input, output, session) {
                    icon = icon("spinner fa-spin"))
       
       model = "rf"
-      verbose = TRUE
-      if (verbose) {
-        message("# Making Prediction Images")
-      }    
-      L = ich_predict(df = df, 
-                      nim = nim, 
-                      model = model,
-                      verbose = verbose,
-                      transformlist = preprocess$invtransforms,
-                      interpolator = preprocess$invtransforms)
+      add_expr({
+        
+        if (verbose) {
+          message("<h3># Making Prediction Images<h3>")
+        }    
+        L = ich_predict(df = df, 
+                        native_img = img, 
+                        nim = nim,
+                        model = model,
+                        verbose = verbose,
+                        transformlist = preprocess$invtransforms,
+                        interpolator = preprocess$interpolator)
+      })
       L$preprocess = preprocess
       values$res = L
-      updateButton(session, "predict", disabled = TRUE, icon = icon("check"))
+      updateButton(session, "predict", disabled = TRUE, 
+                   icon = icon("check"))
       shinyjs::enable("download")
     }
   })
@@ -290,10 +348,14 @@ shinyServer(function(input, output, session) {
     scc = res$native_prediction$smoothed_prediction_image
     # cc = res$native_prediction$prediction_image
     ss = values$ss
-
+    
     if (!is.null(ss) & !is.null(scc)) {
       xyz = xyz(scc > 0.5)
-
+      add_expr({
+        if (verbose) {
+          message("<h3># Plotting Prediction Mask<h3>")
+        }     
+      })         
       ortho2(ss, scc, 
              window = c(0, 100),
              text = "Skull-Stripped\nImage\nand\nPrediction Mask")
@@ -305,30 +367,41 @@ shinyServer(function(input, output, session) {
   output$download <- downloadHandler(
     filename = 'output.rda',
     content = function(file) {
-      res = values$res
+      isolate({
+        vv = reactiveValuesToList(values)
+      })
+      res = vv$res
+      
       save(res, file = file)
     }
   )
   
-  #   proc_img = reactive({
-  #     
-  #     img = read_img()
-  #     if (!is.null(img)) {
-  #       preprocess = ich_preprocess(img = img, 
-  #                                mask = NULL,
-  #                                verbose = TRUE)
-  #       return(preprocess)
-  #     } else {
-  #       return(NULL)
-  #     }
-  #     
-  #   })    
+  output$download_pred <- downloadHandler(
+    filename = 'smoothed_prediction_image.nii.gz',
+    content = function(file) {
+      isolate({
+        vv = reactiveValuesToList(values)
+      })
+      res = vv$res
+      
+      save(res, file = file)
+    }
+  )  
   
-  #   output$tout <- renderPlot({
-  #     proc_img()
-  #   })
-  
-  
+  output$download_pred <- downloadHandler(
+    filename = 'smoothed_prediction_image.nii.gz',
+    content = function(file) {
+      isolate({
+        vv = reactiveValuesToList(values)
+      })
+      outimg = vv$res$native_prediction$smoothed_prediction_image
+      writenii(outimg, 
+               filename = file, 
+               gzipped = TRUE)
+      file.rename(paste0(file, ".nii.gz"), file)
+    }
+  )
+
   
 })
 

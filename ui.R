@@ -37,17 +37,38 @@ shinyUI(fluidPage(
       bsButton("predict", "Create Prediction Images", disabled = TRUE),
       br(),
       br(),
-      downloadButton('download', 'Download')
+      downloadButton('download', 'Download All Output'),
+      br(),
+      br(),
+      downloadButton('download_pred', 'Download Prediction Image Only')
       # actionButton("process", "Process Skull-stripped Image")
     ),
 
     # Show a plot of the generated distribution
     mainPanel(
-      plotOutput("origPlot"),
-      plotOutput("ssPlot"),
-      plotOutput("regPlot"),
-      plotOutput("candPlot"),
-      plotOutput("predPlot")
+      tabsetPanel(
+        id = 'results',
+        tabPanel('Original Data', 
+                 plotOutput("origPlot")
+                 ),
+        tabPanel('Skull Stripped', 
+                 plotOutput("ssPlot")
+        ),
+        tabPanel('Registration', 
+                 plotOutput("regPlot")
+        ),
+        tabPanel('Predictor', 
+                 plotOutput("candPlot")
+        ),        
+        tabPanel('Prediction', 
+                 plotOutput("predPlot")
+        ),                
+        tabPanel('Diagnostics', textOutput("nText")),
+        singleton(
+          tags$head(tags$script(src = "message-handler.js"))
+        )
+      )
+
     )
   )
 ))
