@@ -4,19 +4,34 @@
 #
 # http://shiny.rstudio.com
 #
-
+library(cmaker)
 library(shiny)
 library(shinyBS)
-library(cttools)
-library(extrantsr)
+# library(ITKR)
+library(rgl)
+# library(ANTsR)
+# library(ichseg)
+# library(extrantsr)
 library(fslr)
 library(matlabr)
+library(R.matlab)
 if (!have_matlab()) {
   options(matlab.path = '/Applications/MATLAB_R2014b.app/bin')
 }
 
-# filename =  "~/Desktop/6003-157/_AXIAL_HEAD_STD_20140115181000_2_Eq_1.nii.gz"
+filename =  "~/_AXIAL_HEAD_STD_20140115181000_2_Eq_1.nii.gz"
 verbose = TRUE
+
+download_img = function(outimg, file, gzipped = TRUE){
+  ff = nii.stub(file)
+  # print(ff)
+  writenii(outimg, 
+           filename = ff, 
+           gzipped = gzipped)
+  ext = ifelse(gzipped, ".nii.gz", ".nii")
+  file.rename(paste0(ff, ext), file)     
+  return(file)
+}
 
 # Simple Function that will get the messages out
 add_expr = function(expr){
@@ -89,6 +104,7 @@ shinyServer(function(input, output, session) {
   
   output$origPlot <- renderPlot({
     shinyjs::disable("download")
+    shinyjs::disable("download_pred")
     
     img = read_img()
     if (!is.null(img)) {
@@ -111,31 +127,37 @@ shinyServer(function(input, output, session) {
   # Skull Stripping
   #########################################  
   observe({
-    
-    if (input$ss > 0) {
+    if (!is.null(input$ss)) {
       
-      updateButton(session, "ss", disabled = TRUE, 
-                   icon = icon("spinner fa-spin"))      
-      
-      img = read_img()
-      add_expr({
-        if (verbose) {
-          message("<h3># Skull-Stripping Images</h3>")
-        } 
-        ss = CT_Skull_Strip_robust(img, retimg = TRUE)
-        # ss = CT_Skull_Strip(img, retimg = TRUE)
-      })
-      mask = ss > 0
-      img = check_nifti(img)
-      ss = mask_img(img, mask)
-      ss = window_img(ss, window = c(0, 100), replace = "zero")
-      values$ss = ss
-      icon = icon("check")
-      updateButton(session, "ss", 
-                   disabled = TRUE, 
-                   icon = icon("check"))          
-      updateButton(session, "reg", disabled = FALSE, 
-                   icon = icon("chevron-right"))      
+      if (input$ss > 0) {
+        
+        updateButton(session, "ss", disabled = TRUE, 
+                     icon = icon("spinner fa-spin"))      
+        
+        img = read_img()
+        add_expr({
+          if (verbose) {
+            message("<h3># Skull-Stripping Images</h3>")
+          } 
+          robust = input$robust
+          ss = CT_Skull_Stripper(img, retimg = TRUE, 
+                                 robust = robust)
+          # ss = CT_Skull_Strip(img, retimg = TRUE)
+        })
+        mask = ss > 0
+        img = check_nifti(img)
+        ss = mask_img(img, mask)
+        ss = window_img(ss, window = c(0, 100), 
+                        replace = "zero")
+        values$ss = ss
+        rm(list = c("ss", "mask")); gc(); gc();
+        icon = icon("check")
+        updateButton(session, "ss", 
+                     disabled = TRUE, 
+                     icon = icon("check"))          
+        updateButton(session, "reg", disabled = FALSE, 
+                     icon = icon("chevron-right"))      
+      }
     }
   })
   
@@ -165,56 +187,65 @@ shinyServer(function(input, output, session) {
   #########################################    
   observe({
     # print(input$reg)
-    if (input$reg > 0) {    
-      updateButton(session, "reg", disabled = TRUE, 
-                   icon = icon("spinner fa-spin"))      
+    if (!is.null(input$reg)) {
       
-      ss = values$ss
-      mask = ss > 0
-      outprefix = tempfile()
-      typeofTransform = "Rigid"
-      template.file = system.file(
-        "scct_unsmooth_SS_0.01.nii.gz", 
-        package = "cttools")
-      template = readnii(template.file)
-      interpolator = "Linear"
-      add_expr({
-        if (verbose) {
-          message("<h3># Registering Images<h3>")
-        }            
-        preprocess = registration(
-          filename = ss, 
-          skull_strip = FALSE,
-          correct = FALSE, 
-          outfile = NULL, 
-          retimg = TRUE, 
-          typeofTransform = typeofTransform,
-          template.file = template.file, 
-          interpolator = interpolator,
-          remove.warp = FALSE,
-          outprefix = outprefix,
-          verbose = verbose)
+      if (input$reg > 0) {    
+        updateButton(session, "reg", disabled = TRUE, 
+                     icon = icon("spinner fa-spin"))      
         
-        omask = ants_apply_transforms(
-          fixed = template.file,
-          moving = mask, 
-          typeofTransform = typeofTransform,
-          interpolator = interpolator, 
-          transformlist = preprocess$fwdtransforms)
-      })
-      preprocess$mask = mask
-      preprocess$ss_image = ss
-      preprocess$transformed_image = preprocess$outfile
-      preprocess$transformed_mask = omask
-      preprocess$outfile = NULL
-      preprocess$fixed = template
-      
-      values$preprocess = preprocess
-      updateButton(session, "reg", disabled = TRUE, 
-                   icon = icon("check"))
-      updateButton(session, "make_pred", disabled = FALSE, 
-                   icon = icon("chevron-right"))      
-      
+        ss = values$ss
+        mask = ss > 0
+        outprefix = tempfile()
+        typeofTransform = "Rigid"
+        template.file = system.file(
+          "scct_unsmooth_SS_0.01.nii.gz", 
+          package = "ichseg")
+        template = readnii(template.file)
+        interpolator = "Linear"
+        add_expr({
+          if (verbose) {
+            message("<h3># Registering Images<h3>")
+          }            
+          preprocess = registration(
+            filename = ss, 
+            skull_strip = FALSE,
+            correct = FALSE, 
+            outfile = NULL, 
+            retimg = TRUE, 
+            typeofTransform = typeofTransform,
+            template.file = template.file, 
+            interpolator = interpolator,
+            remove.warp = FALSE,
+            outprefix = outprefix,
+            verbose = verbose)
+          
+          omask = ants_apply_transforms(
+            fixed = template.file,
+            moving = mask, 
+            typeofTransform = typeofTransform,
+            interpolator = interpolator, 
+            transformlist = preprocess$fwdtransforms)
+        })
+        preprocess$mask = mask
+        preprocess$ss_image = ss
+        preprocess$transformed_image = preprocess$outfile
+        preprocess$transformed_mask = omask
+        preprocess$outfile = NULL
+        preprocess$fixed = template
+        
+        preprocess$fwd_mat = readMat(preprocess$fwdtransforms)
+        preprocess$inv_mat = readMat(preprocess$invtransforms)
+        
+        rm(list = c("template", "mask", "omask")); gc(); gc();
+        
+        values$preprocess = preprocess
+        rm(list = c("preprocess")); gc(); gc();
+        updateButton(session, "reg", disabled = TRUE, 
+                     icon = icon("check"))
+        updateButton(session, "make_pred", disabled = FALSE, 
+                     icon = icon("chevron-right"))      
+        
+      }
     }
   })
   
@@ -238,6 +269,7 @@ shinyServer(function(input, output, session) {
     } else {
       return()
     }
+    rm(list = c("preprocess")); gc(); gc();
   })
   
   
@@ -246,36 +278,43 @@ shinyServer(function(input, output, session) {
   #########################################      
   observe({
     print(input$make_pred)
-    if (input$make_pred > 0) {    
-      preprocess = values$preprocess
-      updateButton(session, "make_pred", disabled = TRUE, 
-                   icon = icon("spinner fa-spin"))
-      
-      timg = preprocess$transformed_image
-      tmask = preprocess$transformed_mask > 0.5
-      add_expr({
-        if (verbose) {
-          message("<h3># Making Predictors<h3>")
-        }         
-        img.pred = make_predictors(timg, 
-                                   mask = tmask,
-                                   roi = NULL, 
-                                   save_imgs = FALSE,
-                                   verbose = verbose)
-      })
-      df = img.pred$df
-      nim = img.pred$nim
-      rm(list = "img.pred")
-      gc()
-      df$multiplier = ich_candidate_voxels(df)
-
-      
-      values$df = df
-      values$nim = nim
-      updateButton(session, "make_pred", 
-                   disabled = TRUE, icon = icon("check"))
-      updateButton(session, "predict", disabled = FALSE, 
-                   icon = icon("chevron-right"))      
+    if (!is.null(input$make_pred)){
+      if (input$make_pred > 0) {    
+        preprocess = values$preprocess
+        if (!is.null(preprocess)){
+          updateButton(session, "make_pred", disabled = TRUE, 
+                       icon = icon("spinner fa-spin"))
+          
+          timg = preprocess$transformed_image
+          tmask = preprocess$transformed_mask > 0.5
+          rm(list = c("preprocess")); gc(); gc();
+          add_expr({
+            if (verbose) {
+              message("<h3># Making Predictors<h3>")
+            }         
+            img.pred = make_predictors(
+              timg, 
+              mask = tmask,
+              roi = NULL, 
+              save_imgs = FALSE,
+              verbose = verbose)
+          })
+          df = img.pred$df
+          nim = img.pred$nim
+          rm(list = "img.pred"); gc(); gc();
+          df$multiplier = ich_candidate_voxels(df)
+          
+          
+          values$df = df
+          values$nim = nim
+          rm(list = c("df", "nim")); gc(); gc();
+          
+          updateButton(session, "make_pred", 
+                       disabled = TRUE, icon = icon("check"))
+          updateButton(session, "predict", disabled = FALSE, 
+                       icon = icon("chevron-right"))    
+        }
+      }
     }
   })
   
@@ -300,9 +339,13 @@ shinyServer(function(input, output, session) {
       ortho2(timg, cand, 
              window = c(0, 100), 
              text = "Registered\nImage\nand\nCandidate Mask")
+      rm(list = c("timg", "cand", "xyz")); gc(); gc();
+      
     } else {
       return()
     }
+    rm(list = c("df", "nim", "preprocess")); gc(); gc();
+    
   })  
   
   #########################################
@@ -310,33 +353,48 @@ shinyServer(function(input, output, session) {
   #########################################      
   observe({
     print(input$predict)
-    if (input$predict > 0) {  
-      img = read_img()
-      df = values$df
-      nim = values$nim
-      preprocess = values$preprocess
-      updateButton(session, "predict", disabled = TRUE, 
-                   icon = icon("spinner fa-spin"))
-      
-      model = "rf"
-      add_expr({
-        
-        if (verbose) {
-          message("<h3># Making Prediction Images<h3>")
-        }    
-        L = ich_predict(df = df, 
-                        native_img = img, 
-                        nim = nim,
-                        model = model,
-                        verbose = verbose,
-                        transformlist = preprocess$invtransforms,
-                        interpolator = preprocess$interpolator)
-      })
-      L$preprocess = preprocess
-      values$res = L
-      updateButton(session, "predict", disabled = TRUE, 
-                   icon = icon("check"))
-      shinyjs::enable("download")
+    if (!is.null(input$predict)) {
+      if (input$predict > 0) {  
+        img = read_img()
+        df = values$df
+        nim = values$nim
+        preprocess = values$preprocess
+        if (!is.null(preprocess)) {
+          invtransforms = values$preprocess$invtransforms
+          interpolator = values$preprocess$interpolator
+          print(invtransforms)
+          print(interpolator)
+          
+          message(invtransforms)
+          message(interpolator)
+          updateButton(session, "predict", disabled = TRUE, 
+                       icon = icon("spinner fa-spin"))
+          
+          model = "rf"
+          add_expr({
+            if (verbose) {
+              message("<h3># Making Prediction Images<h3>")
+            }    
+            L = ich_predict(
+              df = df, 
+              native_img = img, 
+              nim = nim,
+              model = model,
+              verbose = verbose,
+              transformlist = invtransforms,
+              interpolator = interpolator)
+          })
+          L$preprocess = values$preprocess
+          # values$preprocess = NULL
+          values$res = L
+          rm(list = c("L")); gc(); gc();
+          
+          updateButton(session, "predict", disabled = TRUE, 
+                       icon = icon("check"))
+          shinyjs::enable("download")
+          shinyjs::enable("download_pred")
+        }
+      }
     }
   })
   
@@ -344,8 +402,7 @@ shinyServer(function(input, output, session) {
   # Predict Image Plot
   #########################################          
   output$predPlot <- renderPlot({
-    res = values$res
-    scc = res$native_prediction$smoothed_prediction_image
+    scc = values$res$native_prediction$smoothed_prediction_image
     # cc = res$native_prediction$prediction_image
     ss = values$ss
     
@@ -358,7 +415,9 @@ shinyServer(function(input, output, session) {
       })         
       ortho2(ss, scc, 
              window = c(0, 100),
+             xyz = xyz,
              text = "Skull-Stripped\nImage\nand\nPrediction Mask")
+      rm(list = c("scc", "ss", "xyz")); gc(); gc();
     } else {
       return()
     }
@@ -376,17 +435,6 @@ shinyServer(function(input, output, session) {
     }
   )
   
-  output$download_pred <- downloadHandler(
-    filename = 'smoothed_prediction_image.nii.gz',
-    content = function(file) {
-      isolate({
-        vv = reactiveValuesToList(values)
-      })
-      res = vv$res
-      
-      save(res, file = file)
-    }
-  )  
   
   output$download_pred <- downloadHandler(
     filename = 'smoothed_prediction_image.nii.gz',
@@ -395,13 +443,21 @@ shinyServer(function(input, output, session) {
         vv = reactiveValuesToList(values)
       })
       outimg = vv$res$native_prediction$smoothed_prediction_image
-      writenii(outimg, 
-               filename = file, 
-               gzipped = TRUE)
-      file.rename(paste0(file, ".nii.gz"), file)
+      
+      message("outimg")
+      # message(outimg)
+      print(outimg)
+      message("file")
+      message(file)
+      print(file)
+      
+      
+      rm(list = c("vv")); gc(); gc();
+      download_img(outimg, file, gzipped = TRUE)
+      
     }
   )
-
+  
   
 })
 

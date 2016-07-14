@@ -1,0 +1,9 @@
+name: ich_predict
+account: jhubiostatistics
+server: shinyapps.io
+appId: 114444
+bundleId: 504937
+url: https://jhubiostatistics.shinyapps.io/ich_predict/
+when: 1468510471.41405
+asMultiple: FALSE
+asStatic: FALSE

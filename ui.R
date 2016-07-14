@@ -19,13 +19,16 @@ shinyUI(fluidPage(
   # Sidebar with a slider input for number of bins
   sidebarLayout(
     sidebarPanel(
-      fileInput('img_fname', 'Choose NIfTI image to upload',
-                accept = c(
-                  '.nii',
-                  '.nii.gz'
-                )
+      fileInput('img_fname', 'Choose NIfTI image to upload'
       ),
-      bsButton("ss", "Skull Strip Image", disabled = TRUE),
+      div(style = "display:inline-block",
+          bsButton("ss", "Skull Strip", 
+                   disabled = TRUE, width = "100%")
+          ),
+      div(style = "display:inline-block",
+          checkboxInput("robust", "Robust Version", 
+                    value = TRUE, width = "100%")
+      ),
       br(),
       br(),
       bsButton("reg", "Register Skull-Stripped Image", disabled = TRUE),
