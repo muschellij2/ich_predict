@@ -5,14 +5,15 @@
 # http://shiny.rstudio.com
 #
 options(shiny.maxRequestSize = 50 * 1024 ^ 2)
-library(cttools)
+# library(cttools)
+# library(ichseg)
 library(shiny)
 library(shinyBS)
 library(shinyjs)
 
 shinyUI(fluidPage(
-  shinyjs::useShinyjs(),  
-  
+  shinyjs::useShinyjs(),
+
   # Application title
   titlePanel("ICH Segmentation"),
 
@@ -22,12 +23,12 @@ shinyUI(fluidPage(
       fileInput('img_fname', 'Choose NIfTI image to upload'
       ),
       div(style = "display:inline-block",
-          bsButton("ss", "Skull Strip", 
+          bsButton("ss", "Skull Strip",
                    disabled = TRUE, width = "100%")
           ),
       div(style = "display:inline-block",
-          checkboxInput("robust", "Robust Version", 
-                    value = TRUE, width = "100%")
+          checkboxInput("robust", "Robust Version",
+                    value = FALSE, width = "100%")
       ),
       br(),
       br(),
@@ -51,21 +52,21 @@ shinyUI(fluidPage(
     mainPanel(
       tabsetPanel(
         id = 'results',
-        tabPanel('Original Data', 
+        tabPanel('Original Data',
                  plotOutput("origPlot")
                  ),
-        tabPanel('Skull Stripped', 
+        tabPanel('Skull Stripped',
                  plotOutput("ssPlot")
         ),
-        tabPanel('Registration', 
+        tabPanel('Registration',
                  plotOutput("regPlot")
         ),
-        tabPanel('Predictor', 
+        tabPanel('Predictor',
                  plotOutput("candPlot")
-        ),        
-        tabPanel('Prediction', 
+        ),
+        tabPanel('Prediction',
                  plotOutput("predPlot")
-        ),                
+        ),
         tabPanel('Diagnostics', textOutput("nText")),
         singleton(
           tags$head(tags$script(src = "message-handler.js"))

@@ -2,8 +2,8 @@ name: ich_predict
 account: jmuschelli
 server: shinyapps.io
 appId: 114009
-bundleId: 504732
+bundleId: 538242
 url: https://jmuschelli.shinyapps.io/ich_predict/
-when: 1468497120.64613
+when: 1471901634.54746
 asMultiple: FALSE
 asStatic: FALSE
